@@ -8,6 +8,8 @@ let currentSocket = null;
 
 let mapOfCookies = new Map();
 
+let username = null;
+let password = null;
 
 async function connectToTLS() {
     return new Promise((resolve, reject) => {
@@ -247,6 +249,13 @@ async function sendRequestHelper(method, path, body) {
     
 }
 
+function saveCookiesHelper(setCookies) {
+    const cookieNames = Array.from(setCookies.keys());
+    for(let i = 0; i < cookieNames.length; i++) {
+        mapOfCookies.set(cookieNames[i], setCookies.get(cookieNames[i]));
+    }
+}
+
 async function loginpageInfoHelper() {
     const keepLooping = true;
 
@@ -256,22 +265,21 @@ async function loginpageInfoHelper() {
         let pageInfo;
 
         try {
-            if(currentSocket === null) {
-                currentSocket = await connectToTLS();
-            }
             pageInfo = await sendRequestHelper(currentMethod, currentPath, null);
-            currentSocket.destroy();
-            currentSocket = null;
+
         } catch (error) {
-            if(currentSocket !== null) {
-                currentSocket.destroy();
-            }
-            currentSocket = null;
             continue;
         }
 
+        //update the map of cookies
+        saveCookiesHelper(pageInfo.cookies);
+        console.log(pageInfo.statusCode, pageInfo.headers);
+
         if(pageInfo.statusCode === 200) {
-            return {pageInfo: pageInfo.body.toString("utf8"), pagePath: currentPath};
+            return {
+                pageInfo: pageInfo.body.toString("utf8"), 
+                pagePath: currentPath
+            };
         }
 
         else if(pageInfo.statusCode === 302) {
@@ -307,6 +315,8 @@ async function main() {
 
     //send GET to login page
     const loginPage = await sendGetLoginPage();
+    console.log(loginPage.pageInfo);
+    console.log(mapOfCookies);
 }
 
 main();
