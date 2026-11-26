@@ -115,6 +115,27 @@ function buildPostRequestHelper(path, body) {
     return request;
 }
 
+function transferEncodingParser(allData, start) {
+
+    const dataChunkArray = allData.slice(start).toString("latin1").split("\r\n");
+
+    //check if the last byte line is 0 if not then return null and wait more 
+    const lastByteLine = dataChunkArray[dataChunkArray.length - 3];
+    if(lastByteLine !== "0") {
+        return null;
+    }
+    let data = "";
+    for(let i = 0; i < dataChunkArray.length - 3; i++) {
+        if(i % 2 == 1) {
+            continue;
+        }
+        else {
+            data += dataChunkArray[i];
+        }
+    }
+    return Buffer.from(body, "latin1");
+}
+
 function responseCheckerHelper(allData) {
 
     const headerPresent = false;
@@ -210,13 +231,6 @@ async function sendRequestHelper(method, path, body) {
         currentSocket.write(request);
     });
     
-
-
-
-
-
-
-
 }
 
 async function loginpageInfoHelper() {
@@ -228,11 +242,15 @@ async function loginpageInfoHelper() {
         let pageInfo;
 
         try {
-            
+            if(currentSocket === null) {
+                currentSocket = await connectToTLS();
+            }
             pageInfo = await sendRequestHelper(currentMethod, currentPath, null);
-        
+            currentSocket.close();
+            currentSocket = null;
         } catch (error) {
-            socket = null;
+            currentSocket.close();
+            currentSocket = null;
             continue;
         }
 
@@ -259,6 +277,7 @@ async function loginpageInfoHelper() {
 
 async function sendGetLoginPage() {
     const loginpageInfo = await loginpageInfoHelper();
+
 }
 
 
