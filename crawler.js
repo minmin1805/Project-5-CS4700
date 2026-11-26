@@ -115,6 +115,70 @@ function buildPostRequestHelper(path, body) {
     return request;
 }
 
+function responseCheckerHelper(allData) {
+
+    const headerPresent = false;
+    if(allData.indexOf("\r\n\r\n") !== -1) {
+        headerPresent = true;
+    }
+    if(!headerPresent) {
+        return false;
+    }
+
+    const headerMap = new Map();
+    let cookieKey = null;
+    let cookieValue = null;
+
+    const allHeaders = allData.slice(0, allData.indexOf("\r\n\r\n"));
+    const allHeaderArray = allHeaders.toString("latin1").split("\r\n");
+
+    let statusNumber = Number(allHeaderArray[0].split(" ")[1]);
+
+    for(let i = 0; i < allHeaderArray.length; i++) {
+        const headerRowArray = allHeaderArray[i].split(" ");
+        const headerName = headerRowArray[0];
+        const headerValue = headerRowArray[1];
+
+        if(headerName.toLowerCase() === "set-cookie") {
+            cookieKey = headerValue.split("=")[0];
+            cookieValue = headerValue.split("=")[1];
+            headerMap.set(cookieKey, cookieValue);
+        }
+        else {
+            headerMap.set(headerName, headerValue);
+        }
+    }
+
+    const contentLengthOrNot = headerMap.conatainsKey("Content-Length:");
+    if(contentLengthOrNot) {
+        const totalDataSize = Number(headerMap.get("Content-Length:"));
+        const bodyStartInx = allData.indexOf("\r\n\r\n") + 4;
+        if(bodyStartInx + totalDataSize > allData.length) {
+            return false;
+        }
+        const body = allData.slice(bodyStartInx, bodyStartInx + totalDataSize);
+        return {
+            statusCode: statusNumber,
+            headers: headerMap,
+            body: body
+        }
+    }
+    else {
+        const body = Buffer.alloc(0);
+        body = transferEncodingParser(allData, bodyStartInx);
+        if(body === null) {
+            return false;
+        }
+        return {
+            statusCode: statusNumber,
+            headers: headerMap,
+            body: body
+        }
+    }
+
+}
+
+
 async function sendRequestHelper(method, path, body) {
     return new Promise((resolve, reject) => {
         let allData = Buffer.alloc(0);
