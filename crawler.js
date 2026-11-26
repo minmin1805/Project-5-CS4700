@@ -1,10 +1,10 @@
-const server = "fakebook.khoury.northeastern.edu"
+let server = "fakebook.khoury.northeastern.edu"
 
-const port = 443;
+let port = 443;
 
 const tls = require('tls');
 
-const currentSocket = null;
+let currentSocket = null;
 
 let mapOfCookies = new Map();
 
@@ -38,12 +38,12 @@ function getParamsHelper() {
     let username = null;
     let password = null;
 
-    password = argToParse(argToParse.length - 1);
-    username = argToParse(argToParse.length - 2);
+    password = argToParse[argToParse.length - 1];
+    username = argToParse[argToParse.length - 2];
 
     return {
         server: setServer || server,
-        port: setPort || port,
+        port: Number(setPort) || port,
         username: username,
         password: password
     }
@@ -73,8 +73,8 @@ function buildGetRequestHelper(path, body) {
 
         if(cookieList.length > 0) {
             request += `Cookie: ${cookiesFormatted}`;
+            request += "\r\n";
         }
-        request += "\r\n";
         request += "\r\n";
         return request;
 }
@@ -99,8 +99,8 @@ function buildPostRequestHelper(path, body) {
     let cookiesFormatted = cookieList.join("; ");
     if(cookieList.length > 0) {
         request += `Cookie: ${cookiesFormatted}`;
+        request += "\r\n";
     }
-    request += "\r\n";
     request += "Content-Type: application/x-www-form-urlencoded";
     request += "\r\n";
     request += `Content-Length: ${Buffer.byteLength(body)}`;
@@ -111,7 +111,6 @@ function buildPostRequestHelper(path, body) {
     request += "\r\n";
     request += "\r\n";
     request += body;
-    request += "\r\n";
     return request;
 }
 
@@ -126,74 +125,86 @@ function transferEncodingParser(allData, start) {
     }
     let data = "";
     for(let i = 0; i < dataChunkArray.length - 3; i++) {
-        if(i % 2 == 1) {
+        if(i % 2 == 0) {
             continue;
         }
         else {
             data += dataChunkArray[i];
         }
     }
-    return Buffer.from(body, "latin1");
+    return Buffer.from(data, "latin1");
 }
 
 function responseCheckerHelper(allData) {
 
-    const headerPresent = false;
+    let headerPresent = false;
     if(allData.indexOf("\r\n\r\n") !== -1) {
         headerPresent = true;
     }
     if(!headerPresent) {
-        return false;
+        return null;
     }
 
-    const headerMap = new Map();
-    let cookieKey = null;
-    let cookieValue = null;
+
 
     const allHeaders = allData.slice(0, allData.indexOf("\r\n\r\n"));
     const allHeaderArray = allHeaders.toString("latin1").split("\r\n");
 
     let statusNumber = Number(allHeaderArray[0].split(" ")[1]);
+    const headerMap = new Map();
+    const cookieMap = new Map();
+    let cookieKey = null;
+    let cookieValue = null;
+    
+    for(let i = 1; i < allHeaderArray.length; i++) {
+        const colonIndex = allHeaderArray[i].indexOf(":");
+        const headerName = allHeaderArray[i].slice(0, colonIndex).trim().toLowerCase();
+        const headerValue = allHeaderArray[i].slice(colonIndex + 1).trim();
 
-    for(let i = 0; i < allHeaderArray.length; i++) {
-        const headerRowArray = allHeaderArray[i].split(" ");
-        const headerName = headerRowArray[0];
-        const headerValue = headerRowArray[1];
-
-        if(headerName.toLowerCase() === "set-cookie") {
-            cookieKey = headerValue.split("=")[0];
-            cookieValue = headerValue.split("=")[1];
-            headerMap.set(cookieKey, cookieValue);
+        if(headerName === "set-cookie") {
+            const cookiePair = headerValue.split(";")[0];
+            cookieKey = cookiePair.slice(0, cookiePair.indexOf("="));
+            cookieValue = cookiePair.slice(cookiePair.indexOf("=") + 1);
+            cookieMap.set(cookieKey, cookieValue);
         }
         else {
             headerMap.set(headerName, headerValue);
         }
     }
 
-    const contentLengthOrNot = headerMap.conatainsKey("Content-Length:");
+    const bodyStartInx = allData.indexOf("\r\n\r\n") + 4;
+    const contentLengthOrNot = headerMap.has("content-length");
     if(contentLengthOrNot) {
-        const totalDataSize = Number(headerMap.get("Content-Length:"));
-        const bodyStartInx = allData.indexOf("\r\n\r\n") + 4;
+        const totalDataSize = Number(headerMap.get("content-length"));
         if(bodyStartInx + totalDataSize > allData.length) {
-            return false;
+            return null;
         }
         const body = allData.slice(bodyStartInx, bodyStartInx + totalDataSize);
         return {
             statusCode: statusNumber,
             headers: headerMap,
+            cookies: cookieMap,
             body: body
         }
     }
-    else {
-        const body = Buffer.alloc(0);
-        body = transferEncodingParser(allData, bodyStartInx);
+    else if(headerMap.get("transfer-encoding") === "chunked") {
+        const body = transferEncodingParser(allData, bodyStartInx);
         if(body === null) {
-            return false;
+            return null;
         }
         return {
             statusCode: statusNumber,
             headers: headerMap,
+            cookies: cookieMap,
             body: body
+        }
+    }
+    else {
+        return {
+            statusCode: statusNumber,
+            headers: headerMap,
+            cookies: cookieMap,
+            body: Buffer.alloc(0)
         }
     }
 
@@ -208,6 +219,8 @@ async function sendRequestHelper(method, path, body) {
             allData = Buffer.concat([allData, dataChunk]);
             const response = responseCheckerHelper(allData);
             if(response !== null) {
+                currentSocket.off("data", updateData);
+                currentSocket.off("close", closeSocket);
                 resolve(response);
             }
         }
@@ -221,12 +234,13 @@ async function sendRequestHelper(method, path, body) {
 
         currentSocket.on("data", updateData);
         currentSocket.on("close", closeSocket);
+        let request;
         if(method === "GET") {
-            const request = buildGetRequestHelper(path, body);
+            request = buildGetRequestHelper(path, body);
     
         }
         else if(method === "POST") {
-            const request = buildPostRequestHelper(path, body);
+            request = buildPostRequestHelper(path, body);
         }
         currentSocket.write(request);
     });
@@ -236,8 +250,8 @@ async function sendRequestHelper(method, path, body) {
 async function loginpageInfoHelper() {
     const keepLooping = true;
 
-    const currentPath = "/accounts/login/?next=/fakebook/";
-    const currentMethod = "GET";
+    let currentPath = "/accounts/login/?next=/fakebook/";
+    let currentMethod = "GET";
     while(keepLooping) {
         let pageInfo;
 
@@ -246,26 +260,28 @@ async function loginpageInfoHelper() {
                 currentSocket = await connectToTLS();
             }
             pageInfo = await sendRequestHelper(currentMethod, currentPath, null);
-            currentSocket.close();
+            currentSocket.destroy();
             currentSocket = null;
         } catch (error) {
-            currentSocket.close();
+            if(currentSocket !== null) {
+                currentSocket.destroy();
+            }
             currentSocket = null;
             continue;
         }
 
         if(pageInfo.statusCode === 200) {
-            return {pageInfo: pageInfo.html, pagePath: pageInfo.path};
+            return {pageInfo: pageInfo.body.toString("utf8"), pagePath: currentPath};
         }
 
         else if(pageInfo.statusCode === 302) {
-            const newLocation = pageInfo.headers["location"];
+            const newLocation = pageInfo.headers.get("location");
 
             const newUrl = new URL(newLocation, `https://${server}:${port}${currentPath}`);
             currentPath = newUrl.pathname + newUrl.search;
             currentMethod = "GET";
         }
-        else if(response.statusCode === 503) {
+        else if(pageInfo.statusCode === 503) {
             continue;
         }
         else if(pageInfo.statusCode === 403 || pageInfo.statusCode === 404) {
@@ -277,12 +293,15 @@ async function loginpageInfoHelper() {
 
 async function sendGetLoginPage() {
     const loginpageInfo = await loginpageInfoHelper();
+    return loginpageInfo;
 
 }
 
 
 async function main() {
     const argsFromCommand = getParamsHelper();
+    server = argsFromCommand.server;
+    port = argsFromCommand.port;
 
     currentSocket = await connectToTLS();
 
