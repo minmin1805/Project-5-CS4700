@@ -299,6 +299,49 @@ async function loginpageInfoHelper() {
     }
 }
 
+async function pageGetHelper(path) {
+    const keepLooping = true;
+
+    let currentPath = path;
+    let currentMethod = "GET";
+    while(keepLooping) {
+        let pageInfo;
+
+        try {
+            pageInfo = await sendRequestHelper(currentMethod, currentPath, null);
+
+        } catch (error) {
+            continue;
+        }
+
+        //update the map of cookies
+        saveCookiesHelper(pageInfo.cookies);
+        // console.log(pageInfo.statusCode, pageInfo.headers);
+
+        if(pageInfo.statusCode === 200) {
+            return {
+                pageInfo: pageInfo.body.toString("utf8"), 
+                pagePath: currentPath
+            };
+        }
+
+        else if(pageInfo.statusCode === 302) {
+            const newLocation = pageInfo.headers.get("location");
+
+            const newUrl = new URL(newLocation, `https://${server}:${port}${currentPath}`);
+            currentPath = newUrl.pathname + newUrl.search;
+            currentMethod = "GET";
+        }
+        else if(pageInfo.statusCode === 503) {
+            continue;
+        }
+        else if(pageInfo.statusCode === 403 || pageInfo.statusCode === 404) {
+            return null;
+        }
+
+    }
+}
+
 
 
 function tokenFindHelper(loginpageInfo) {
@@ -349,6 +392,21 @@ function getLinkHelper(homePageInfo) {
     return foundLinks;
 }
 
+function flagCheckerHelper(homePageInfo) {
+    // <h3 class='secret_flag' style="color:red">FLAG: 64 letters and numbers</h3>
+    const foundFlag = new Set();
+    while(homePageInfo.includes('<h3 class=\'secret_flag\' style="color:red">FLAG: ')) {
+        const tagStartInx = homePageInfo.indexOf('<h3 class=\'secret_flag\' style="color:red">FLAG: ');
+        const tagEndInx = tagStartInx + 51;
+        const flagEnd = homePageInfo.indexOf('</h3>', tagEndInx);
+        const flagWithTag = homePageInfo.slice(tagEndInx, flagEnd);
+        const flag = flagWithTag.split('</h3>')[0];
+        foundFlag.add(flag);
+        homePageInfo = homePageInfo.slice(flagEnd + 5);
+    }
+    return foundFlag;
+}
+
 
 async function main() {
     const argsFromCommand = getParamsHelper();
@@ -358,6 +416,9 @@ async function main() {
     password = argsFromCommand.password;
 
     currentSocket = await connectToTLS();
+
+    const foundFlag = new Set();
+    
 
     //send GET to login page
     const loginPage = await sendGetLoginPage();
@@ -371,11 +432,18 @@ async function main() {
     // console.log(Array.from(mapOfCookies.keys()));
 
     //GET to home page
-    const getHomePageRes = await sendRequestHelper("GET", "/fakebook/", null);
-    console.log(getHomePageRes.statusCode);
-    console.log(getHomePageRes.body.toString("utf8"));
+    const getHomePageRes = await pageGetHelper("/fakebook/");
+    // console.log(getHomePageRes.pageInfo);
+    const flagFound = flagCheckerHelper(getHomePageRes.pageInfo.toString("utf8"));
+    if(flagFound.size !== 0) {
+        for(let eachFlag of flagFound) {
+            if(!foundFlag.has(eachFlag)) {
+                foundFlag.add(eachFlag);
+            }
+        }
+    }
 
-    const linksFromHomePage = getLinkHelper(getHomePageRes.body.toString("utf8"));
+    const linksFromHomePage = getLinkHelper(getHomePageRes.pageInfo.toString("utf8"));
     console.log(linksFromHomePage);
 
     const linksToVisit = [];
@@ -390,11 +458,21 @@ async function main() {
             linksToVisit.push(linksFromHomePage[i]);
         }
     }
-    while(linksToVisit.length > 0) {
+    
+    while(linksToVisit.length > 0 && foundFlag.length !== 5) {
         const currentLink = linksToVisit.shift();
-        const currentPageRes = await sendRequestHelper("GET", currentLink, null);
+        const currentPageRes = await pageGetHelper(currentLink);
 
-        const currentPageFoundLinks = getLinkHelper(currentPageRes.body.toString("utf8"));
+        const flagFound = flagCheckerHelper(currentPageRes.pageInfo.toString("utf8"));
+        if(flagFound.size !== 0) {
+            for(let eachFlag of flagFound) {
+                if(!foundFlag.has(eachFlag)) {
+                    foundFlag.add(eachFlag);
+                }
+            }
+        }
+
+        const currentPageFoundLinks = getLinkHelper(currentPageRes.pageInfo.toString("utf8"));
         for(let i = 0; i < currentPageFoundLinks.length; i++) {
             if(visitedAlready.has(currentPageFoundLinks[i])) {
                 continue;
@@ -406,6 +484,11 @@ async function main() {
         }
         console.log(currentLink);
     }
+    for(let i = 0; i < foundFlag.size; i++) {
+        console.log(foundFlag[i]);
+    }
+    currentSocket.destroy();
+    process.exit(0);
 }
 
 main();
