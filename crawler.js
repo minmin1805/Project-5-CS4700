@@ -273,7 +273,7 @@ async function loginpageInfoHelper() {
 
         //update the map of cookies
         saveCookiesHelper(pageInfo.cookies);
-        console.log(pageInfo.statusCode, pageInfo.headers);
+        // console.log(pageInfo.statusCode, pageInfo.headers);
 
         if(pageInfo.statusCode === 200) {
             return {
@@ -299,10 +299,44 @@ async function loginpageInfoHelper() {
     }
 }
 
+
+
+function tokenFindHelper(loginpageInfo) {
+    //get pass ...name="csrfmiddlewaretoken"
+    const passFirstPart = loginpageInfo.indexOf('name="csrfmiddlewaretoken"');
+
+    //get to the start index of the token
+    const tokenStartInx = loginpageInfo.indexOf('value="', passFirstPart) + 7;
+
+    //get to the end index of the token
+    const tokenEndInx = loginpageInfo.indexOf('"', tokenStartInx);
+
+    //get the token
+    const token = loginpageInfo.slice(tokenStartInx, tokenEndInx);
+    return token;
+}
+
 async function sendGetLoginPage() {
     const loginpageInfo = await loginpageInfoHelper();
-    return loginpageInfo;
 
+    const loginformToken = tokenFindHelper(loginpageInfo.pageInfo);
+    
+    return {
+        loginBodyInfo: loginpageInfo.pageInfo,
+        loginFormToken: loginformToken
+    };
+
+}
+
+async function sendPostLoginPage(loginBodyInfo, loginFormToken) {
+    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&csrfmiddlewaretoken=${encodeURIComponent(loginFormToken)}&next=/fakebook/`;
+
+    const loginResponse = await sendRequestHelper("POST", "/accounts/login/", body);
+    return loginResponse;
+}
+
+function getLinkHelper(homePageInfo) {
+    
 }
 
 
@@ -310,13 +344,29 @@ async function main() {
     const argsFromCommand = getParamsHelper();
     server = argsFromCommand.server;
     port = argsFromCommand.port;
+    username = argsFromCommand.username;
+    password = argsFromCommand.password;
 
     currentSocket = await connectToTLS();
 
     //send GET to login page
     const loginPage = await sendGetLoginPage();
-    console.log(loginPage.pageInfo);
-    console.log(mapOfCookies);
+    // console.log(loginPage.loginFormToken.length);
+    // console.log(mapOfCookies);
+
+    //POST to login page
+    const loginResponse = await sendPostLoginPage(loginPage.loginBodyInfo, loginPage.loginFormToken);
+    saveCookiesHelper(loginResponse.cookies);
+    // console.log(loginResponse.statusCode, loginResponse.headers);
+    // console.log(Array.from(mapOfCookies.keys()));
+
+    //GET to home page
+    const getHomePageRes = await sendRequestHelper("GET", "/fakebook/", null);
+    console.log(getHomePageRes.statusCode);
+    console.log(getHomePageRes.body.toString("utf8"));
+
+    const linksFromHomePage = getLinkHelper(getHomePageRes.body.toString("utf8"));
+    console.log(linksFromHomePage)
 }
 
 main();
