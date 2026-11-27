@@ -336,7 +336,17 @@ async function sendPostLoginPage(loginBodyInfo, loginFormToken) {
 }
 
 function getLinkHelper(homePageInfo) {
-    
+    const foundLinks = [];
+    while(homePageInfo.includes('<a href="/fakebook/')) {
+        const linkStartInx = homePageInfo.indexOf('<a href="/fakebook/');
+        const pathStartInx = linkStartInx + 9;
+        const pathEndInx = homePageInfo.indexOf('"', pathStartInx);
+        const path = homePageInfo.slice(pathStartInx, pathEndInx);
+        foundLinks.push(path);
+        //move pass the "
+        homePageInfo = homePageInfo.slice(pathEndInx + 1);
+    }
+    return foundLinks;
 }
 
 
@@ -366,7 +376,36 @@ async function main() {
     console.log(getHomePageRes.body.toString("utf8"));
 
     const linksFromHomePage = getLinkHelper(getHomePageRes.body.toString("utf8"));
-    console.log(linksFromHomePage)
+    console.log(linksFromHomePage);
+
+    const linksToVisit = [];
+    const visitedAlready = new Set();
+
+    for(let i = 0; i < linksFromHomePage.length; i++) {
+        if(visitedAlready.has(linksFromHomePage[i])) {
+            continue;
+        }
+        else {
+            visitedAlready.add(linksFromHomePage[i]);
+            linksToVisit.push(linksFromHomePage[i]);
+        }
+    }
+    while(linksToVisit.length > 0) {
+        const currentLink = linksToVisit.shift();
+        const currentPageRes = await sendRequestHelper("GET", currentLink, null);
+
+        const currentPageFoundLinks = getLinkHelper(currentPageRes.body.toString("utf8"));
+        for(let i = 0; i < currentPageFoundLinks.length; i++) {
+            if(visitedAlready.has(currentPageFoundLinks[i])) {
+                continue;
+            }
+            else {
+                visitedAlready.add(currentPageFoundLinks[i]);
+                linksToVisit.push(currentPageFoundLinks[i]);
+            }
+        }
+        console.log(currentLink);
+    }
 }
 
 main();
