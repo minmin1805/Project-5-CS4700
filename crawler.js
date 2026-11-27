@@ -128,28 +128,6 @@ function buildPostRequestHelper(path, body) {
     return request;
 }
 
-//helper function to exact the data of the response from the server
-function transferEncodingParser(allData, start) {
-
-    const dataChunkArray = allData.slice(start).toString().split("\r\n");
-
-    //check if the last byte line is 0 if not then return null and wait more 
-    const lastByteLine = dataChunkArray[dataChunkArray.length - 3];
-    if(lastByteLine !== "0") {
-        return null;
-    }
-    //if the upper condition is not triggered then add each data in the odd positio
-    let data = "";
-    for(let i = 0; i < dataChunkArray.length - 3; i++) {
-        if(i % 2 == 0) {
-            continue;
-        }
-        else {
-            data += dataChunkArray[i];
-        }
-    }
-    return Buffer.from(data);
-}
 
 //helper function to process each atributes from the response from the server
 function responseCheckerHelper(allData) {
@@ -211,27 +189,6 @@ function responseCheckerHelper(allData) {
             headers: headerMap,
             cookies: cookieMap,
             body: body
-        }
-    }
-    //for transfer-encoding i will process the chunks in transferEncodingParser
-    else if(headerMap.get("transfer-encoding") === "chunked") {
-        const body = transferEncodingParser(allData, bodyStartInx);
-        if(body === null) {
-            return null;
-        }
-        return {
-            statusCode: statusNumber,
-            headers: headerMap,
-            cookies: cookieMap,
-            body: body
-        }
-    }
-    else {
-        return {
-            statusCode: statusNumber,
-            headers: headerMap,
-            cookies: cookieMap,
-            body: Buffer.alloc(0)
         }
     }
 
@@ -550,7 +507,7 @@ async function main() {
             }
         }
         // console.log(currentLink);
-        console.log(linkCount);
+        // console.log(linkCount);
     }
     for(let eachFlag of foundFlag) {
         console.log(eachFlag);
