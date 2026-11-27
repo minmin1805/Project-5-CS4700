@@ -113,14 +113,10 @@ function buildPostRequestHelper(path, body) {
         request += `Cookie: ${cookiesFormatted}`;
         request += "\r\n";
     }
-    //include the content-type,  content-length, origin, referer
+    //include the content-type, content-length
     request += "Content-Type: application/x-www-form-urlencoded";
     request += "\r\n";
     request += `Content-Length: ${Buffer.byteLength(body)}`;
-    request += "\r\n";
-    request += `Origin: https://${server}`;
-    request += "\r\n";
-    request += `Referer: https://${server}/accounts/login/?next=/fakebook/`;
     request += "\r\n";
     request += "\r\n";
     //include the body of the request
@@ -245,7 +241,7 @@ function saveCookiesHelper(setCookies) {
 async function loginpageInfoHelper() {
     const keepLooping = true;
 
-    let currentPath = "/accounts/login/?next=/fakebook/";
+    let currentPath = "/accounts/login/";
     let currentMethod = "GET";
     while(keepLooping) {
         let pageInfo;
@@ -274,8 +270,7 @@ async function loginpageInfoHelper() {
         else if(pageInfo.statusCode === 302) {
             const newLocation = pageInfo.headers.get("location");
 
-            const newUrl = new URL(newLocation, `https://${server}:${port}${currentPath}`);
-            currentPath = newUrl.pathname + newUrl.search;
+            currentPath = newLocation;
             currentMethod = "GET";
         }
         //if code = 503 then continue looping
@@ -322,8 +317,7 @@ async function pageGetHelper(path) {
         else if(pageInfo.statusCode === 302) {
             const newLocation = pageInfo.headers.get("location");
 
-            const newUrl = new URL(newLocation, `https://${server}:${port}${currentPath}`);
-            currentPath = newUrl.pathname + newUrl.search;
+            currentPath = newLocation;
             currentMethod = "GET";
         }
         //if code = 503 then continue looping
@@ -373,7 +367,7 @@ async function sendGetLoginPage() {
 //helper function to send POST request to the login page
 async function sendPostLoginPage(loginBodyInfo, loginFormToken) {
     //this build the body of the POST request
-    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&csrfmiddlewaretoken=${encodeURIComponent(loginFormToken)}&next=/fakebook/`;
+    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&csrfmiddlewaretoken=${encodeURIComponent(loginFormToken)}`;
 
     //send the POST request then receive the response from it
     const loginResponse = await sendRequestHelper("POST", "/accounts/login/", body);
